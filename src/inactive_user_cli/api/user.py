@@ -9,6 +9,8 @@ class ListUserAPI:
     """ListUserForAdmin 接口封装"""
 
     ACTION = "ListUserForAdmin"
+    # ListUserForAdmin 使用 iam service
+    SERVICE = "iam"
 
     def __init__(self, client: APIClient):
         self.client = client
@@ -19,13 +21,23 @@ class ListUserAPI:
         status: int | None = None,
         role_name: str | None = None,
         org_id: str | None = None,
-        include_visitor: bool = True,
+        include_visitor: bool = False,
         source: str | None = None,
         contact_search: str | None = None,
-        page_size: int = 100,
+        page_size: int = 10000,
     ) -> tuple[list[dict[str, Any]], int]:
         """
         获取用户列表
+
+        Args:
+            query: 搜索关键词
+            status: 用户状态
+            role_name: 角色名称
+            org_id: 组织ID
+            include_visitor: 是否包含访客（默认 False）
+            source: 用户来源
+            contact_search: 手机号/邮箱搜索
+            page_size: 每页大小（默认 10000）
 
         Returns:
             (users, total): 用户列表和总数
@@ -55,4 +67,5 @@ class ListUserAPI:
             items_field="Items",
             total_field="Total",
             page_size=page_size,
+            service=self.SERVICE,
         )

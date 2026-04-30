@@ -16,6 +16,11 @@ class APIConfig:
     account_id: str
     ak: str
     sk: str
+    # Top 参数（可选）
+    request_id: str | None = None
+    user_id: str | None = None
+    tenant_id: str | None = None
+    region_key: str | None = None
 
 
 @dataclass
@@ -45,11 +50,16 @@ def load_config() -> Config:
         account_id=getenv("ACCOUNT_ID", "1000000000"),
         ak=getenv("API_AK", ""),
         sk=getenv("API_SK", ""),
+        # Top 参数（可选）
+        request_id=getenv("API_REQUEST_ID"),
+        user_id=getenv("API_USER_ID"),
+        tenant_id=getenv("API_TENANT_ID"),
+        region_key=getenv("API_REGION_KEY"),
     )
 
     app_config = AppConfig(
         log_dir=Path(getenv("LOG_DIR", "logs")),
-        default_page_size=int(getenv("DEFAULT_PAGE_SIZE", "100")),
+        default_page_size=int(getenv("DEFAULT_PAGE_SIZE", "10000")),
     )
 
     # 验证必需配置

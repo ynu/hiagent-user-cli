@@ -21,13 +21,21 @@ class APIError(Exception):
 class APIClient:
     """API 客户端基类"""
 
+    # 默认 service（ListApp 使用 app）
+    DEFAULT_SERVICE = "app"
+
     def __init__(self, config: APIConfig):
         self.config = config
         self.signer = SignerV4()
         self.base_url = f"http://{config.host}"
 
-    def _build_sign_param(self, action: str) -> SignParam:
-        """构建签名参数"""
+    def _build_sign_param(self, action: str, service: str | None = None) -> SignParam:
+        """构建签名参数
+
+        Args:
+            action: API Action
+            service: 服务名称（可选，默认使用 DEFAULT_SERVICE）
+        """
         param = SignParam()
         param.method = "POST"
         param.host = self.config.host
@@ -44,10 +52,12 @@ class APIClient:
         param.header_list = header
         param.headers = header
 
+        # 使用指定的 service 或默认 service
+        actual_service = service or self.DEFAULT_SERVICE
         credentials = Credentials(
             self.config.ak,
             self.config.sk,
-            self.config.service,
+            actual_service,
             self.config.region,
         )
         self.signer.sign(param, credentials)
@@ -58,9 +68,15 @@ class APIClient:
         """构建请求 URL"""
         return f"{self.base_url}?Action={action}&Version={self.config.version}&X-Account-Id={self.config.account_id}"
 
-    def request(self, action: str, data: dict[str, Any]) -> dict[str, Any]:
-        """发送 API 请求"""
-        param = self._build_sign_param(action)
+    def request(self, action: str, data: dict[str, Any], service: str | None = None) -> dict[str, Any]:
+        """发送 API 请求
+
+        Args:
+            action: API Action
+            data: 请求数据
+            service: 服务名称（可选，默认使用 DEFAULT_SERVICE）
+        """
+        param = self._build_sign_param(action, service)
         url = self._build_url(action)
 
         response = requests.post(
@@ -88,9 +104,21 @@ class APIClient:
         size_field: str = "PageSize",
         items_field: str = "Items",
         total_field: str = "Total",
-        page_size: int = 100,
+        page_size: int = 10000,
+        service: str | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
-        """分页请求，遍历所有数据"""
+        """分页请求，遍历所有数据
+
+        Args:
+            action: API Action
+            data: 请求数据
+            page_field: 页数字段名
+            size_field: 每页大小字段名
+            items_field: 数据项字段名
+            total_field: 总数字段名
+            page_size: 每页大小（默认 10000）
+            service: 服务名称（可选，默认使用 DEFAULT_SERVICE）
+        """
         all_items: list[dict[str, Any]] = []
         page = 1
 
@@ -101,7 +129,7 @@ class APIClient:
 
         while True:
             data["ListOpt"][page_field] = page
-            result = self.request(action, data)
+            result = self.request(action, data, service)
 
             # 提取数据
             resp_data = result.get("Response", result)

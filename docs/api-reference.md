@@ -4,11 +4,11 @@
 
 ## 接口概述
 
-| 接口 | Action | 用途 |
-|------|--------|------|
-| ListApp | `ListApp` | 获取智能体列表（含创建人） |
-| ListUserForAdmin | `ListUserForAdmin` | 获取平台用户列表 |
-| DeleteUser | `DeleteUser` | 删除指定用户 |
+| 接口 | Action | Service | 用途 |
+|------|--------|---------|------|
+| ListApp | `ListApp` | app | 获取智能体列表（含创建人） |
+| ListUserForAdmin | `ListUserForAdmin` | iam | 获取平台用户列表 |
+| DeleteUser | `DeleteUser` | iam | 删除指定用户 |
 
 ## 通用说明
 
@@ -20,27 +20,63 @@
 - Content-Type: application/json
 - URL 参数: Action, Version, X-Account-Id
 
+### Top 参数（可选）
+请求中的顶层公共参数，默认不传：
+```json
+{
+  "Top": {
+    "RequestID": "可选，请求唯一标识",
+    "TenantID": "可选，租户ID",
+    "UserID": "可选，用户ID",
+    "RegionKey": "可选，区域ID"
+  }
+}
+```
+
 ### 分页
 ListApp 和 ListUserForAdmin 接口支持分页，通过 ListOpt 参数控制：
 - PageNumber: 页码（从 1 开始）
-- PageSize: 每页条数
+- PageSize: 每页条数（默认 10000）
+
+### 默认配置
+- ListApp: 默认 PageSize=10000，Filter 包含 StartTime/EndTime 时间范围
+- ListUserForAdmin: 默认 PageSize=10000，IncludeVisitor=false
+- DeleteUser: 无分页
 
 ---
 
 ## ListApp - 获取智能体列表
 
-### 请求
+**Service**: `app`
+
+### 请求（默认配置）
 ```json
 {
+  "Filter": {
+    "StartTime": "2020-01-01T00:00:00.00Z",
+    "EndTime": "2100-01-01T00:00:00.00Z"
+  },
   "ListOpt": {
     "PageNumber": 1,
-    "PageSize": 100
-  },
+    "PageSize": 10000
+  }
+}
+```
+
+### 请求（带可选参数）
+```json
+{
   "Filter": {
+    "StartTime": "2020-01-01T00:00:00.00Z",
+    "EndTime": "2100-01-01T00:00:00.00Z",
     "Keyword": "可选，搜索关键词",
     "AppType": 0,
     "Status": 1,
     "WorkspaceID": "可选，工作空间ID"
+  },
+  "ListOpt": {
+    "PageNumber": 1,
+    "PageSize": 10000
   }
 }
 ```
@@ -81,19 +117,32 @@ ListApp 和 ListUserForAdmin 接口支持分页，通过 ListOpt 参数控制：
 
 ## ListUserForAdmin - 获取用户列表
 
-### 请求
+**Service**: `iam`
+
+### 请求（默认配置）
+```json
+{
+  "IncludeVisitor": false,
+  "ListOpt": {
+    "PageNumber": 1,
+    "PageSize": 10000
+  }
+}
+```
+
+### 请求（带可选参数）
 ```json
 {
   "Query": "可选，搜索关键词",
   "Status": 1,
   "RoleName": "可选，角色名",
   "OrgID": "可选，组织ID",
-  "IncludeVisitor": true,
+  "IncludeVisitor": false,
   "Source": "可选，用户来源",
   "ContactSearch": "可选，手机号/邮箱搜索",
   "ListOpt": {
     "PageNumber": 1,
-    "PageSize": 100
+    "PageSize": 10000
   }
 }
 ```
@@ -135,6 +184,8 @@ ListApp 和 ListUserForAdmin 接口支持分页，通过 ListOpt 参数控制：
 
 ## DeleteUser - 删除用户
 
+**Service**: `iam`
+
 ### 请求方式 1: 通过 ID 删除
 ```json
 {
@@ -163,7 +214,17 @@ ListApp 和 ListUserForAdmin 接口支持分页，通过 ListOpt 参数控制：
 
 ## 签名机制
 
+### 服务与签名对应关系
+
+| 接口 | Service | Region |
+|------|---------|--------|
+| ListApp | app | cn-north-1 |
+| ListUserForAdmin | iam | cn-north-1 |
+| DeleteUser | iam | cn-north-1 |
+
 ### Python 示例
+
+#### ListApp 签名
 ```python
 from volcengine.auth.SignerV4 import SignerV4
 from volcengine.auth.SignParam import SignParam
@@ -176,7 +237,7 @@ import json
 ak = "your_access_key"
 sk = "your_secret_key"
 region = "cn-north-1"
-service = "app"
+service = "app"  # ListApp 使用 app service
 host = "10.10.160.222:30040/"
 action = "ListApp"
 version = "2023-08-01"
@@ -205,6 +266,84 @@ signer.sign(param, credentials)
 
 # 发送请求
 url = f"http://{host}?Action={action}&Version={version}&X-Account-Id={account_id}"
-data = {"ListOpt": {"PageNumber": 1, "PageSize": 100}}
+data = {
+    "Filter": {
+        "StartTime": "2020-01-01T00:00:00.00Z",
+        "EndTime": "2100-01-01T00:00:00.00Z"
+    },
+    "ListOpt": {"PageNumber": 1, "PageSize": 10000}
+}
 response = requests.post(url, headers=param.headers, data=json.dumps(data))
+```
+
+#### ListUserForAdmin/DeleteUser 签名
+```python
+from volcengine.auth.SignerV4 import SignerV4
+from volcengine.auth.SignParam import SignParam
+from volcengine.Credentials import Credentials
+from collections import OrderedDict
+import requests
+import json
+
+# 配置
+ak = "your_access_key"
+sk = "your_secret_key"
+region = "cn-north-1"
+service = "iam"  # ListUserForAdmin 和 DeleteUser 使用 iam service
+host = "10.10.160.222:30040/"
+action = "ListUserForAdmin"  # 或 "DeleteUser"
+version = "2023-08-01"
+account_id = "1000000000"
+
+# 签名
+signer = SignerV4()
+param = SignParam()
+param.method = "POST"
+param.host = host
+
+query = OrderedDict()
+query["Action"] = action
+query["Version"] = version
+query["X-Account-Id"] = account_id
+param.query = query
+
+header = OrderedDict()
+header["Host"] = host
+header["Content-Type"] = "application/json"
+param.header_list = header
+param.headers = header
+
+credentials = Credentials(ak, sk, service, region)
+signer.sign(param, credentials)
+
+# 发送请求
+url = f"http://{host}?Action={action}&Version={version}&X-Account-Id={account_id}"
+data = {"IncludeVisitor": False, "ListOpt": {"PageNumber": 1, "PageSize": 10000}}
+response = requests.post(url, headers=param.headers, data=json.dumps(data))
+```
+
+---
+
+## 环境变量配置
+
+```bash
+# API 配置
+API_HOST=10.10.160.222:30040/
+API_VERSION=2023-08-01
+API_REGION=cn-north-1
+ACCOUNT_ID=1000000000
+
+# 认证凭据
+API_AK=your_access_key_here
+API_SK=your_secret_key_here
+
+# Top 参数（可选）
+API_REQUEST_ID=your_request_id
+API_USER_ID=your_user_id
+API_TENANT_ID=your_tenant_id
+API_REGION_KEY=your_region_key
+
+# 应用配置
+LOG_DIR=logs
+DEFAULT_PAGE_SIZE=10000
 ```
