@@ -91,8 +91,8 @@ class LogManager:
             console.print("[dim]无用户[/dim]")
             return
 
-        table = Table(show_header=True, header_style="bold cyan")
-        table.add_column("ID", style="dim", width=12)
+        table = Table(show_header=True, header_style="bold cyan", min_width=120)
+        table.add_column("ID", style="dim")
         table.add_column("用户名", style="green")
         table.add_column("邮箱", style="blue")
         table.add_column("显示名", style="white")
@@ -115,8 +115,8 @@ class LogManager:
             console.print("[dim]无创建人[/dim]")
             return
 
-        table = Table(show_header=True, header_style="bold cyan")
-        table.add_column("创建人ID", style="dim", width=15)
+        table = Table(show_header=True, header_style="bold cyan", min_width=60)
+        table.add_column("创建人ID", style="dim")
         table.add_column("创建人名称", style="green")
         table.add_column("智能体数量", justify="right", style="yellow")
 
