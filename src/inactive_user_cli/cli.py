@@ -156,27 +156,22 @@ def delete(page_size: int, force: bool, output: Optional[str]):
         logger.print_warning(f"即将删除 {len(inactive_users)} 个非活跃用户:")
         logger.print_users_table(inactive_users)
 
-        # 确认删除
+        # 如果不是强制模式，则逐个确认
         if not force:
-            confirm = click.confirm("\n确认删除以上用户？")
-            if not confirm:
-                logger.print_info("已取消删除")
-                return
+            # 执行删除（逐个确认）
+            delete_api = DeleteUserAPI(client)
+            records = []
 
-        # 执行删除
-        delete_api = DeleteUserAPI(client)
-        records = []
-
-        with logger.create_progress() as progress:
-            task = progress.add_task(
-                f"[red]删除用户...[/red]",
-                total=len(inactive_users),
-            )
-
-            for user in inactive_users:
+            for i, user in enumerate(inactive_users, 1):
                 user_id = user.get("ID", "")
                 username = user.get("UserName", "")
-                email = user.get("Email", "")
+                display_name = user.get("DisplayName", "") or "-"
+
+                logger.print_info(f"[{i}/{len(inactive_users)}] 确认删除用户: {username} ({display_name}) [{user_id}]")
+                confirm = click.confirm("确认删除？")
+                if not confirm:
+                    logger.print_info(f"跳过: {username}")
+                    continue
 
                 try:
                     delete_api.delete_by_id(user_id)
@@ -184,7 +179,7 @@ def delete(page_size: int, force: bool, output: Optional[str]):
                     record = DeleteRecord(
                         user_id=user_id,
                         username=username,
-                        email=email,
+                        email=user.get("Email", ""),
                         status="success",
                         deleted_at=datetime.now(timezone.utc).isoformat(),
                         full_info=user,
@@ -194,7 +189,7 @@ def delete(page_size: int, force: bool, output: Optional[str]):
                     record = DeleteRecord(
                         user_id=user_id,
                         username=username,
-                        email=email,
+                        email=user.get("Email", ""),
                         status="failed",
                         error=str(e),
                         full_info=user,
@@ -202,7 +197,56 @@ def delete(page_size: int, force: bool, output: Optional[str]):
                     logger.print_error(f"删除失败: {username} ({user_id}) - {e}")
 
                 records.append(record)
-                progress.advance(task)
+
+            if not records:
+                logger.print_info("没有删除任何用户")
+                return
+        else:
+            # 强制模式 - 批量确认
+            confirm = click.confirm("\n确认删除以上所有用户？")
+            if not confirm:
+                logger.print_info("已取消删除")
+                return
+
+            # 执行批量删除
+            delete_api = DeleteUserAPI(client)
+            records = []
+
+            with logger.create_progress() as progress:
+                task = progress.add_task(
+                    f"[red]删除用户...[/red]",
+                    total=len(inactive_users),
+                )
+
+                for user in inactive_users:
+                    user_id = user.get("ID", "")
+                    username = user.get("UserName", "")
+
+                    try:
+                        delete_api.delete_by_id(user_id)
+                        from datetime import datetime, timezone
+                        record = DeleteRecord(
+                            user_id=user_id,
+                            username=username,
+                            email=user.get("Email", ""),
+                            status="success",
+                            deleted_at=datetime.now(timezone.utc).isoformat(),
+                            full_info=user,
+                        )
+                        logger.print_success(f"已删除: {username} ({user_id})")
+                    except APIError as e:
+                        record = DeleteRecord(
+                            user_id=user_id,
+                            username=username,
+                            email=user.get("Email", ""),
+                            status="failed",
+                            error=str(e),
+                            full_info=user,
+                        )
+                        logger.print_error(f"删除失败: {username} ({user_id}) - {e}")
+
+                    records.append(record)
+                    progress.advance(task)
 
         # 保存日志
         log_file = logger.save_delete_log(records)
