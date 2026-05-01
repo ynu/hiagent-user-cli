@@ -24,6 +24,19 @@ class APIConfig:
 
 
 @dataclass
+class EmailConfig:
+    """邮件配置"""
+    enabled: bool
+    smtp_host: str
+    smtp_port: int
+    smtp_user: str
+    smtp_password: str
+    from_addr: str
+    to_addrs: list[str]
+    use_tls: bool = True
+
+
+@dataclass
 class AppConfig:
     """应用配置"""
     log_dir: Path
@@ -35,6 +48,7 @@ class Config:
     """全局配置"""
     api: APIConfig
     app: AppConfig
+    email: EmailConfig | None = None
 
 
 def load_config() -> Config:
@@ -57,24 +71,27 @@ def load_config() -> Config:
         region_key=getenv("API_REGION_KEY"),
     )
 
-    # ListApp 专用版本
-    app_version = getenv("API_APP_VERSION", "2023-08-01")
-
-    # 默认 10000
-    default_page_size = int(getenv("DEFAULT_PAGE_SIZE", "10000"))
-
-    app_config = AppConfig(
-        log_dir=Path(getenv("LOG_DIR", "logs")),
-        default_page_size=default_page_size,
-    )
-
     app_config = AppConfig(
         log_dir=Path(getenv("LOG_DIR", "logs")),
         default_page_size=int(getenv("DEFAULT_PAGE_SIZE", "10000")),
     )
 
+    # 邮件配置（可选）
+    email_config = None
+    if getenv("EMAIL_ENABLED", "").lower() in ("true", "1", "yes"):
+        email_config = EmailConfig(
+            enabled=True,
+            smtp_host=getenv("EMAIL_SMTP_HOST", ""),
+            smtp_port=int(getenv("EMAIL_SMTP_PORT", "587")),
+            smtp_user=getenv("EMAIL_SMTP_USER", ""),
+            smtp_password=getenv("EMAIL_SMTP_PASSWORD", ""),
+            from_addr=getenv("EMAIL_FROM", ""),
+            to_addrs=getenv("EMAIL_TO", "").split(","),
+            use_tls=getenv("EMAIL_USE_TLS", "true").lower() in ("true", "1", "yes"),
+        )
+
     # 验证必需配置
     if not api_config.ak or not api_config.sk:
         raise ValueError("API_AK and API_SK must be set in environment variables or .env file")
 
-    return Config(api=api_config, app=app_config)
+    return Config(api=api_config, app=app_config, email=email_config)

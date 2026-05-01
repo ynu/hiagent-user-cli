@@ -25,6 +25,7 @@ from inactive_user_cli.api.app import ListAppAPI
 from inactive_user_cli.api.user import ListUserAPI
 from inactive_user_cli.api.delete import DeleteUserAPI
 from inactive_user_cli.core.analyzer import InactiveUserAnalyzer
+from inactive_user_cli.email import send_delete_notification
 
 
 def get_config() -> tuple[Config, LogManager, APIClient]:
@@ -254,6 +255,31 @@ def delete(page_size: int, force: bool, output: Optional[str]):
         failure_count = len(records) - success_count
 
         logger.print_delete_summary(log_file, success_count, failure_count)
+
+        # 发送邮件通知（如果配置了）
+        if config.email and config.email.enabled:
+            email_records = [
+                {
+                    "user_id": r.user_id,
+                    "username": r.username,
+                    "email": r.email,
+                    "status": r.status,
+                    "error": r.error or "",
+                }
+                for r in records
+            ]
+            try:
+                send_delete_notification(
+                    config,
+                    len(records),
+                    success_count,
+                    failure_count,
+                    str(log_file),
+                    email_records,
+                )
+                logger.print_info("已发送邮件通知")
+            except Exception as e:
+                logger.print_warning(f"发送邮件通知失败: {e}")
 
     except APIError as e:
         logger.print_error(f"API 请求失败: {e}")
