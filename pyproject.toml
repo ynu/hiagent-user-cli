@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
-hiagent-user = "inactive_user_cli.cli:main"
+inactive-user = "inactive_user_cli.cli:main"
 
 [project.optional-dependencies]
 dev = [
