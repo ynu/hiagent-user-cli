@@ -23,26 +23,34 @@ class APIClient:
 
     # 默认 service（ListApp 使用 app）
     DEFAULT_SERVICE = "app"
+    # ListApp 专用版本
+    APP_VERSION = "2023-08-01"
+    # ListUser/DeleteUser 版本
+    IAM_VERSION = "2024-12-25"
 
     def __init__(self, config: APIConfig):
         self.config = config
         self.signer = SignerV4()
         self.base_url = f"http://{config.host}"
 
-    def _build_sign_param(self, action: str, service: str | None = None) -> SignParam:
+    def _build_sign_param(self, action: str, service: str | None = None, version: str | None = None) -> SignParam:
         """构建签名参数
 
         Args:
             action: API Action
             service: 服务名称（可选，默认使用 DEFAULT_SERVICE）
+            version: API 版本（可选，默认使用配置版本）
         """
         param = SignParam()
         param.method = "POST"
         param.host = self.config.host
 
+        # 使用指定的 version 或配置的 version
+        actual_version = version or self.config.version
+
         query = OrderedDict()
         query["Action"] = action
-        query["Version"] = self.config.version
+        query["Version"] = actual_version
         query["X-Account-Id"] = self.config.account_id
         param.query = query
 
@@ -64,25 +72,48 @@ class APIClient:
 
         return param
 
-    def _build_url(self, action: str) -> str:
-        """构建请求 URL"""
-        return f"{self.base_url}?Action={action}&Version={self.config.version}&X-Account-Id={self.config.account_id}"
+    def _build_url(self, action: str, version: str | None = None) -> str:
+        """构建请求 URL
 
-    def request(self, action: str, data: dict[str, Any], service: str | None = None) -> dict[str, Any]:
+        Args:
+            action: API Action
+            version: API 版本（可选）
+        """
+        actual_version = version or self.config.version
+        return f"{self.base_url}?Action={action}&Version={actual_version}&X-Account-Id={self.config.account_id}"
+
+    def request(self, action: str, data: dict[str, Any], service: str | None = None, version: str | None = None) -> dict[str, Any]:
         """发送 API 请求
 
         Args:
             action: API Action
             data: 请求数据
             service: 服务名称（可选，默认使用 DEFAULT_SERVICE）
+            version: API 版本（可选）
         """
-        param = self._build_sign_param(action, service)
-        url = self._build_url(action)
+        # 序列化 body 用于签名
+        body_json = json.dumps(data)
+
+        # 构建签名参数并设置 body
+        param = self._build_sign_param(action, service, version)
+        param.body = body_json
+
+        # 重新签名（包含 body）
+        actual_service = service or self.DEFAULT_SERVICE
+        credentials = Credentials(
+            self.config.ak,
+            self.config.sk,
+            actual_service,
+            self.config.region,
+        )
+        self.signer.sign(param, credentials)
+
+        url = self._build_url(action, version)
 
         response = requests.post(
             url,
             headers=param.headers,
-            data=json.dumps(data),
+            data=body_json,
             timeout=30,
         )
 
@@ -106,6 +137,7 @@ class APIClient:
         total_field: str = "Total",
         page_size: int = 10000,
         service: str | None = None,
+        version: str | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         """分页请求，遍历所有数据
 
@@ -118,6 +150,7 @@ class APIClient:
             total_field: 总数字段名
             page_size: 每页大小（默认 10000）
             service: 服务名称（可选，默认使用 DEFAULT_SERVICE）
+            version: API 版本（可选）
         """
         all_items: list[dict[str, Any]] = []
         page = 1
@@ -129,10 +162,10 @@ class APIClient:
 
         while True:
             data["ListOpt"][page_field] = page
-            result = self.request(action, data, service)
+            result = self.request(action, data, service, version)
 
-            # 提取数据
-            resp_data = result.get("Response", result)
+            # 提取数据 - 兼容 Result 和 Response
+            resp_data = result.get("Result", result.get("Response", result))
             items = resp_data.get(items_field, [])
             all_items.extend(items)
 

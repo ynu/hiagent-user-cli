@@ -9,8 +9,9 @@ class ListUserAPI:
     """ListUserForAdmin 接口封装"""
 
     ACTION = "ListUserForAdmin"
-    # ListUserForAdmin 使用 iam service
+    # ListUserForAdmin 使用 iam service 和版本
     SERVICE = "iam"
+    VERSION = "2024-12-25"
 
     def __init__(self, client: APIClient):
         self.client = client
@@ -68,4 +69,5 @@ class ListUserAPI:
             total_field="Total",
             page_size=page_size,
             service=self.SERVICE,
+            version=self.VERSION,
         )

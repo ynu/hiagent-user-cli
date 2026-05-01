@@ -7,8 +7,9 @@ class DeleteUserAPI:
     """DeleteUser 接口封装"""
 
     ACTION = "DeleteUser"
-    # DeleteUser 使用 iam service
+    # DeleteUser 使用 iam service 和版本
     SERVICE = "iam"
+    VERSION = "2024-12-25"
 
     def __init__(self, client: APIClient):
         self.client = client
@@ -23,7 +24,7 @@ class DeleteUserAPI:
         Returns:
             是否删除成功
         """
-        self.client.request(self.ACTION, {"ID": user_id}, service=self.SERVICE)
+        self.client.request(self.ACTION, {"ID": user_id}, service=self.SERVICE, version=self.VERSION)
         return True
 
     def delete_by_name(self, username: str) -> bool:
@@ -36,5 +37,5 @@ class DeleteUserAPI:
         Returns:
             是否删除成功
         """
-        self.client.request(self.ACTION, {"Name": username}, service=self.SERVICE)
+        self.client.request(self.ACTION, {"Name": username}, service=self.SERVICE, version=self.VERSION)
         return True

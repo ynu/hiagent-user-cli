@@ -43,8 +43,8 @@ def load_config() -> Config:
     load_dotenv()
 
     api_config = APIConfig(
-        host=getenv("API_HOST", "10.10.160.222:30040/"),
-        version=getenv("API_VERSION", "2023-08-01"),
+        host=getenv("API_HOST", "10.10.160.222:30040"),
+        version=getenv("API_VERSION", "2024-12-25"),
         service=getenv("API_SERVICE", "app"),
         region=getenv("API_REGION", "cn-north-1"),
         account_id=getenv("ACCOUNT_ID", "1000000000"),
@@ -55,6 +55,17 @@ def load_config() -> Config:
         user_id=getenv("API_USER_ID"),
         tenant_id=getenv("API_TENANT_ID"),
         region_key=getenv("API_REGION_KEY"),
+    )
+
+    # ListApp 专用版本
+    app_version = getenv("API_APP_VERSION", "2023-08-01")
+
+    # 默认 10000
+    default_page_size = int(getenv("DEFAULT_PAGE_SIZE", "10000"))
+
+    app_config = AppConfig(
+        log_dir=Path(getenv("LOG_DIR", "logs")),
+        default_page_size=default_page_size,
     )
 
     app_config = AppConfig(

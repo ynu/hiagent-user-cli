@@ -1,6 +1,17 @@
 """命令行界面"""
 
+import os
 import sys
+
+# Windows 强制 UTF-8 输出 - 必须在任何其他导入之前设置
+if sys.platform == "win32":
+    os.system("chcp 65001 >nul 2>&1")
+    # 设置标准输出/错误的编码
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from pathlib import Path
 from typing import Optional
 

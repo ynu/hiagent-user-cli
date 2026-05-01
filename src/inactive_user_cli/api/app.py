@@ -14,8 +14,9 @@ class ListAppAPI:
     """ListApp 接口封装"""
 
     ACTION = "ListApp"
-    # ListApp 使用 app service
+    # ListApp 使用 app service 和版本
     SERVICE = "app"
+    VERSION = "2023-08-01"
 
     def __init__(self, client: APIClient):
         self.client = client
@@ -72,6 +73,7 @@ class ListAppAPI:
             total_field="Total",
             page_size=page_size,
             service=self.SERVICE,
+            version=self.VERSION,
         )
 
     def get_creators(self, page_size: int = 10000) -> set[str]:
@@ -82,5 +84,6 @@ class ListAppAPI:
             创建人 ID 集合
         """
         apps, _ = self.list_apps(page_size=page_size)
-        creators = {app.get("CreateUser", "") for app in apps if app.get("CreateUser")}
+        # API 返回 CreateUserID 字段
+        creators = {app.get("CreateUserID", "") for app in apps if app.get("CreateUserID")}
         return creators

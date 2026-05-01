@@ -1,6 +1,8 @@
 """日志管理器 - Rich 彩色输出 + JSON 文件持久化"""
 
 import json
+import os
+import sys
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,7 +13,11 @@ from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 
-console = Console()
+# 禁用 Rich 的 legacy_windows 模式以支持 UTF-8
+if sys.platform == "win32":
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+
+console = Console(legacy_windows=False, force_terminal=True)
 
 
 @dataclass
@@ -110,18 +116,23 @@ class LogManager:
             return
 
         table = Table(show_header=True, header_style="bold cyan")
-        table.add_column("创建人ID", style="dim", width=12)
-        table.add_column("智能体数量", justify="right", style="green")
+        table.add_column("创建人ID", style="dim", width=15)
+        table.add_column("创建人名称", style="green")
+        table.add_column("智能体数量", justify="right", style="yellow")
 
-        # 按创建人ID分组统计
-        creator_stats: dict[str, int] = {}
+        # 按创建人ID分组统计，保留 CreateUserName
+        creator_stats: dict[str, tuple[int, str]] = {}  # {uid: (count, name)}
         for creator in creators:
-            uid = creator.get("CreateUser", "")
+            uid = creator.get("CreateUserID", "")
+            name = creator.get("CreateUserName", "")
             if uid:
-                creator_stats[uid] = creator_stats.get(uid, 0) + 1
+                if uid in creator_stats:
+                    creator_stats[uid] = (creator_stats[uid][0] + 1, creator_stats[uid][1])
+                else:
+                    creator_stats[uid] = (1, name)
 
-        for uid, count in sorted(creator_stats.items()):
-            table.add_row(uid, str(count))
+        for uid, (count, name) in sorted(creator_stats.items()):
+            table.add_row(uid, name or "-", str(count))
 
         console.print(table)
 
