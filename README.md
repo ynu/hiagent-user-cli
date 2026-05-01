@@ -11,7 +11,7 @@ uv sync
 ## Usage
 
 ```bash
-uv run inactive-user --help
+uv run hiagent-user --help
 ```
 
 ## Technical Design

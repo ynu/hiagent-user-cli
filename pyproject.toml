@@ -1,5 +1,5 @@
 [project]
-name = "inactive-user-cli"
+name = "hiagent-user-cli"
 version = "1.0.0"
 description = "CLI tool for detecting and cleaning inactive users in AI Agent platform"
 readme = "README.md"
@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
-inactive-user = "inactive_user_cli.cli:main"
+hiagent-user = "inactive_user_cli.cli:main"
 
 [project.optional-dependencies]
 dev = [
