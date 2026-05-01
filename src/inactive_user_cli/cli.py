@@ -174,9 +174,9 @@ def delete(page_size: int, force: bool, output: Optional[str]):
             )
 
             for user in inactive_users:
-                user_id = user.get("id", "")
-                username = user.get("username", "")
-                email = user.get("email", "")
+                user_id = user.get("ID", "")
+                username = user.get("UserName", "")
+                email = user.get("Email", "")
 
                 try:
                     delete_api.delete_by_id(user_id)
