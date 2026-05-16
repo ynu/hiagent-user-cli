@@ -74,14 +74,16 @@ def list_creators(page_size: int):
 @main.command("list-users")
 @click.option("--page-size", default=100, help="每页数量")
 @click.option("--query", default=None, help="搜索关键词")
-def list_users(page_size: int, query: Optional[str]):
+@click.option("--include-visitor", is_flag=True, default=True, help="包含访客用户（默认开启）")
+def list_users(page_size: int, query: Optional[str], include_visitor: bool):
     """查看平台用户列表"""
     config, logger, client = get_config()
-    logger.print_header("平台用户列表")
+    visitor_note = "（含访客）" if include_visitor else ""
+    logger.print_header(f"平台用户列表{visitor_note}")
 
     try:
         list_user = ListUserAPI(client)
-        users, total = list_user.list_users(query=query, page_size=page_size)
+        users, total = list_user.list_users(query=query, page_size=page_size, include_visitor=include_visitor)
 
         logger.print_info(f"共获取 {total} 个用户")
         logger.print_users_table(users)
@@ -95,23 +97,33 @@ def list_users(page_size: int, query: Optional[str]):
 @click.option("--page-size", default=100, help="每页数量")
 @click.option("--output", type=click.Path(), default=None, help="输出到文件")
 def analyze(page_size: int, output: Optional[str]):
-    """分析并列出非活跃用户（预览模式）"""
+    """分析并列出非活跃用户（访客单独统计，非访客区分活跃/非活跃）"""
     config, logger, client = get_config()
-    logger.print_header("非活跃用户分析")
+    logger.print_header("用户分析报告")
 
     try:
         analyzer = InactiveUserAnalyzer(client, logger)
         result = analyzer.analyze(page_size=page_size)
 
+        # 区分统计：访客单独统计，非访客区分活跃/非活跃
+        regular_users = result["active_users"] + len(result["inactive_users"])
+        visitor_count = result.get("active_visitor_count", 0) + len(result.get("inactive_visitors", []))
+
         logger.print_stats(
             total_users=result["total_users"],
-            active_users=result["active_users"],
-            inactive_users=result["inactive_count"],
+            regular_users=regular_users,
+            regular_active=result["active_users"],
+            regular_inactive=len(result["inactive_users"]),
+            visitor_count=visitor_count,
         )
 
         if result["inactive_users"]:
-            logger.print_info(f"非活跃用户列表:")
+            logger.print_info("普通非活跃用户列表:")
             logger.print_users_table(result["inactive_users"])
+
+        if result.get("inactive_visitors"):
+            logger.print_info("访客非活跃用户列表:")
+            logger.print_users_table(result["inactive_visitors"])
 
             # 输出到文件
             if output:
@@ -122,10 +134,13 @@ def analyze(page_size: int, output: Optional[str]):
                     json.dump({
                         "summary": {
                             "total_users": result["total_users"],
-                            "active_users": result["active_users"],
-                            "inactive_count": result["inactive_count"],
+                            "regular_users": regular_users,
+                            "regular_active": result["active_users"],
+                            "regular_inactive": len(result["inactive_users"]),
+                            "visitor_count": visitor_count,
                         },
                         "inactive_users": result["inactive_users"],
+                        "inactive_visitors": result.get("inactive_visitors", []),
                     }, f, ensure_ascii=False, indent=2)
                 logger.print_success(f"已保存到 {output_path}")
 
@@ -136,26 +151,43 @@ def analyze(page_size: int, output: Optional[str]):
 
 @main.command("delete")
 @click.option("--page-size", default=100, help="每页数量")
+@click.option("--only-visitor", is_flag=True, help="只删除访客用户")
 @click.option("--force", is_flag=True, help="跳过确认直接删除")
 @click.option("--output", type=click.Path(), default=None, help="输出到文件")
-def delete(page_size: int, force: bool, output: Optional[str]):
-    """删除非活跃用户（需确认）"""
+def delete(page_size: int, only_visitor: bool, force: bool, output: Optional[str]):
+    """删除用户（--only-visitor 删所有访客，其他删非活跃用户，需确认）"""
     config, logger, client = get_config()
-    logger.print_header("删除非活跃用户")
+    visitor_note = "（仅访客）" if only_visitor else ""
+    logger.print_header(f"删除{visitor_note}")
 
     try:
-        # 分析非活跃用户
-        analyzer = InactiveUserAnalyzer(client, logger)
-        result = analyzer.analyze(page_size=page_size)
-        inactive_users = result["inactive_users"]
+        # 获取平台用户（包含访客）
+        list_user = ListUserAPI(client)
+        users, total_users = list_user.list_users(page_size=page_size, include_visitor=True)
 
-        if not inactive_users:
-            logger.print_info("没有发现非活跃用户")
+        if only_visitor:
+            # --only-visitor: 删除所有访客用户（通过 RoleName 识别）
+            target_users = [u for u in users if u.get("RoleName") == "TenantVisitor"]
+        else:
+            # 默认：删除非活跃用户中的非访客
+            analyzer = InactiveUserAnalyzer(client, logger)
+            result = analyzer.analyze(page_size=page_size)
+            # 只取普通非活跃用户，排除访客
+            target_users = result["inactive_users"]
+
+        if not target_users:
+            if only_visitor:
+                logger.print_info("没有发现访客用户")
+            else:
+                logger.print_info("没有发现非活跃用户")
             return
 
         # 显示将要删除的用户
-        logger.print_warning(f"即将删除 {len(inactive_users)} 个非活跃用户:")
-        logger.print_users_table(inactive_users)
+        if only_visitor:
+            logger.print_warning(f"即将删除 {len(target_users)} 个访客用户:")
+        else:
+            logger.print_warning(f"即将删除 {len(target_users)} 个非活跃用户:")
+        logger.print_users_table(target_users)
 
         # 如果不是强制模式，则逐个确认
         if not force:
@@ -163,12 +195,12 @@ def delete(page_size: int, force: bool, output: Optional[str]):
             delete_api = DeleteUserAPI(client)
             records = []
 
-            for i, user in enumerate(inactive_users, 1):
+            for i, user in enumerate(target_users, 1):
                 user_id = user.get("ID", "")
                 username = user.get("UserName", "")
                 display_name = user.get("DisplayName", "") or "-"
 
-                logger.print_info(f"[{i}/{len(inactive_users)}] 确认删除用户: {username} ({display_name}) [{user_id}]")
+                logger.print_info(f"[{i}/{len(target_users)}] 确认删除用户: {username} ({display_name}) [{user_id}]")
                 confirm = click.confirm("确认删除？")
                 if not confirm:
                     logger.print_info(f"跳过: {username}")
@@ -216,10 +248,10 @@ def delete(page_size: int, force: bool, output: Optional[str]):
             with logger.create_progress() as progress:
                 task = progress.add_task(
                     f"[red]删除用户...[/red]",
-                    total=len(inactive_users),
+                    total=len(target_users),
                 )
 
-                for user in inactive_users:
+                for user in target_users:
                     user_id = user.get("ID", "")
                     username = user.get("UserName", "")
 

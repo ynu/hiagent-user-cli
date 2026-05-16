@@ -32,9 +32,9 @@ uv run inactive-user --help
 
 ## 命令参考
 
-### analyze - 分析非活跃用户
+### analyze - 分析用户
 
-预览分析模式下查看所有从未创建智能体的用户。
+分析平台用户，访客单独统计，非访客区分活跃/非活跃。
 
 ```bash
 uv run inactive-user analyze [--page-size N] [--output FILE]
@@ -48,35 +48,34 @@ uv run inactive-user analyze [--page-size N] [--output FILE]
 **示例:**
 
 ```bash
-# 分析非活跃用户
 uv run inactive-user analyze
-
-# 输出到文件
-uv run inactive-user analyze --output inactive_users.json
-
-# 大数据量场景
-uv run inactive-user analyze --page-size 10000
+uv run inactive-user analyze --output report.json
 ```
 
-### delete - 删除非活跃用户
+### delete - 删除用户
 
-删除操作需要确认，使用 `--force` 跳过确认直接执行。
+- `--only-visitor`: 删除所有访客用户（不区分活跃状态）
+- 默认：删除普通用户（非访客）中的非活跃用户
 
 ```bash
-uv run inactive-user delete [--page-size N] [--force] [--output FILE]
+uv run inactive-user delete [--page-size N] [--only-visitor] [--force] [--output FILE]
 ```
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
 | `--page-size` | integer | 每页数量，默认 100 |
+| `--only-visitor` | flag | 删除所有访客用户 |
 | `--force` | flag | 跳过确认，直接删除 |
 | `--output` | path | 输出到 JSON 文件 |
 
 **示例:**
 
 ```bash
-# 交互模式：逐个确认删除
+# 交互模式：逐个确认删除非活跃用户
 uv run inactive-user delete
+
+# 删除所有访客用户（不区分活跃状态）
+uv run inactive-user delete --only-visitor --force
 
 # 批量确认模式
 uv run inactive-user delete --force
@@ -105,24 +104,22 @@ uv run inactive-user list-creators
 
 ### list-users - 平台用户列表
 
-查看平台所有用户，支持关键词搜索。
+查看平台所有用户（默认包含访客），支持关键词搜索。
 
 ```bash
-uv run inactive-user list-users [--page-size N] [--query KEYWORD]
+uv run inactive-user list-users [--page-size N] [--query KEYWORD] [--include-visitor]
 ```
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
 | `--page-size` | integer | 每页数量，默认 100 |
 | `--query` | text | 搜索关键词 |
+| `--include-visitor` | flag | 包含访客用户（默认开启） |
 
 **示例:**
 
 ```bash
-# 查看所有用户
 uv run inactive-user list-users
-
-# 搜索用户
 uv run inactive-user list-users --query "张三"
 ```
 

@@ -17,9 +17,13 @@ class InactiveUserAnalyzer:
         self.list_app = ListAppAPI(client)
         self.list_user = ListUserAPI(client)
 
-    def analyze(self, page_size: int = 100) -> dict[str, Any]:
+    def analyze(self, page_size: int = 100, include_visitor: bool = True) -> dict[str, Any]:
         """
         分析非活跃用户
+
+        Args:
+            page_size: 分页大小
+            include_visitor: 是否包含访客用户（默认 True）
 
         Returns:
             包含分析结果的字典
@@ -30,27 +34,38 @@ class InactiveUserAnalyzer:
             creators = self.list_app.get_creators(page_size=page_size)
             progress.update(task1, completed=True, description=f"[green]获取到 {len(creators)} 个创建人")
 
-            # 步骤2: 获取平台用户
+            # 步骤2: 获取平台用户（包含访客）
             task2 = progress.add_task("[cyan]获取平台用户...", total=None)
-            users, total_users = self.list_user.list_users(page_size=page_size)
+            users, total_users = self.list_user.list_users(page_size=page_size, include_visitor=True)
             progress.update(task2, completed=True, description=f"[green]获取到 {total_users} 个用户")
 
-        # 步骤3: 计算非活跃用户
+        # 步骤3: 计算非活跃用户，区分访客
         inactive_users = []
+        inactive_visitors = []
         active_count = 0
+        active_visitor_count = 0
 
         for user in users:
             user_id = user.get("ID", "")
+            is_visitor = user.get("RoleName") == "TenantVisitor"
             if user_id not in creators:
-                inactive_users.append(user)
+                if is_visitor:
+                    inactive_visitors.append(user)
+                else:
+                    inactive_users.append(user)
             else:
-                active_count += 1
+                if is_visitor:
+                    active_visitor_count += 1
+                else:
+                    active_count += 1
 
         return {
             "total_users": total_users,
             "active_users": active_count,
             "inactive_users": inactive_users,
-            "inactive_count": len(inactive_users),
+            "inactive_visitors": inactive_visitors,
+            "inactive_count": len(inactive_users) + len(inactive_visitors),
+            "active_visitor_count": active_visitor_count,
             "creators": creators,
         }
 
