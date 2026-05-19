@@ -115,6 +115,7 @@ def analyze(page_size: int, output: Optional[str]):
             regular_active=result["active_users"],
             regular_inactive=len(result["inactive_users"]),
             visitor_count=visitor_count,
+            workspace_admin_count=len(result.get("workspace_admins", [])),
         )
 
         if result["inactive_users"]:
@@ -123,26 +124,42 @@ def analyze(page_size: int, output: Optional[str]):
 
         if result.get("inactive_visitors"):
             logger.print_info("访客非活跃用户列表:")
-            logger.print_users_table(result["inactive_visitors"])
+            logger.print_users_table(result.get("inactive_visitors"))
 
-            # 输出到文件
-            if output:
-                import json
-                output_path = Path(output)
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(output_path, "w", encoding="utf-8") as f:
-                    json.dump({
-                        "summary": {
-                            "total_users": result["total_users"],
-                            "regular_users": regular_users,
-                            "regular_active": result["active_users"],
-                            "regular_inactive": len(result["inactive_users"]),
-                            "visitor_count": visitor_count,
-                        },
-                        "inactive_users": result["inactive_users"],
-                        "inactive_visitors": result.get("inactive_visitors", []),
-                    }, f, ensure_ascii=False, indent=2)
-                logger.print_success(f"已保存到 {output_path}")
+        # 显示工作空间列表
+        workspaces = result.get("workspaces", [])
+        if workspaces:
+            logger.print_info("团队工作空间列表:")
+            logger.print_workspaces_table([
+                {"workspace_id": w.workspace_id, "workspace_name": w.workspace_name, "admins": [
+                    {"member_name": m.member_name, "member_display_name": m.member_display_name}
+                    for m in w.admins
+                ], "other_members": [
+                    {"member_name": m.member_name, "member_display_name": m.member_display_name}
+                    for m in w.other_members
+                ]}
+                for w in workspaces
+            ])
+
+        # 输出到文件
+        if output:
+            import json
+            output_path = Path(output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "summary": {
+                        "total_users": result["total_users"],
+                        "regular_users": regular_users,
+                        "regular_active": result["active_users"],
+                        "regular_inactive": len(result["inactive_users"]),
+                        "visitor_count": visitor_count,
+                        "workspace_admins": list(result.get("workspace_admins", [])),
+                    },
+                    "inactive_users": result["inactive_users"],
+                    "inactive_visitors": result.get("inactive_visitors", []),
+                }, f, ensure_ascii=False, indent=2)
+            logger.print_success(f"已保存到 {output_path}")
 
     except APIError as e:
         logger.print_error(f"API 请求失败: {e}")

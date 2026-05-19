@@ -51,7 +51,8 @@ class TestInactiveUserAnalyzer:
 
     def test_analyze_empty(self, analyzer, mock_client):
         """测试空数据分析"""
-        mock_client.paginated_request = Mock(return_value=([], 0))
+        # paginated_request 调用顺序: ListApp -> ListUser -> ListAllWorkspace -> ListWorkspaceMember
+        mock_client.paginated_request = Mock(side_effect=[([], 0), ([], 0), ([], 0), ([], 0)])
         result = analyzer.analyze(page_size=100)
 
         assert result["total_users"] == 0
@@ -62,15 +63,16 @@ class TestInactiveUserAnalyzer:
     def test_analyze_all_active(self, analyzer, mock_client):
         """测试所有用户都是活跃用户"""
         apps = [
-            {"CreateUser": "user_001"},
-            {"CreateUser": "user_002"},
+            {"CreateUserID": "user_001"},
+            {"CreateUserID": "user_002"},
         ]
         users = [
-            {"ID": "user_001", "UserName": "User 1"},
-            {"ID": "user_002", "UserName": "User 2"},
+            {"ID": "user_001", "Name": "User 1"},
+            {"ID": "user_002", "Name": "User 2"},
         ]
 
-        mock_client.paginated_request = Mock(side_effect=[(apps, 2), (users, 2)])
+        # paginated_request 调用顺序: ListApp -> ListUser -> ListAllWorkspace -> ListWorkspaceMember
+        mock_client.paginated_request = Mock(side_effect=[(apps, 2), (users, 2), ([], 0), ([], 0)])
         result = analyzer.analyze(page_size=100)
 
         assert result["total_users"] == 2
@@ -81,15 +83,16 @@ class TestInactiveUserAnalyzer:
     def test_analyze_mixed(self, analyzer, mock_client):
         """测试混合用户（活跃和非活跃）"""
         apps = [
-            {"CreateUser": "user_001"},
+            {"CreateUserID": "user_001"},
         ]
         users = [
-            {"ID": "user_001", "UserName": "Active User"},
-            {"ID": "user_002", "UserName": "Inactive User"},
-            {"ID": "user_003", "UserName": "Another Inactive"},
+            {"ID": "user_001", "Name": "Active User"},
+            {"ID": "user_002", "Name": "Inactive User"},
+            {"ID": "user_003", "Name": "Another Inactive"},
         ]
 
-        mock_client.paginated_request = Mock(side_effect=[(apps, 1), (users, 3)])
+        # paginated_request 调用顺序: ListApp -> ListUser -> ListAllWorkspace -> ListWorkspaceMember
+        mock_client.paginated_request = Mock(side_effect=[(apps, 1), (users, 3), ([], 0), ([], 0)])
         result = analyzer.analyze(page_size=100)
 
         assert result["total_users"] == 3
@@ -101,3 +104,43 @@ class TestInactiveUserAnalyzer:
         assert "user_002" in inactive_ids
         assert "user_003" in inactive_ids
         assert "user_001" not in inactive_ids
+
+    def test_analyze_exclude_workspace_admins(self, analyzer, mock_client):
+        """测试排除空间管理员"""
+        apps = [
+            {"CreateUserID": "user_001"},
+        ]
+        users = [
+            {"ID": "user_001", "UserName": "Active User", "DisplayName": ""},
+            {"ID": "user_002", "UserName": "Inactive User", "DisplayName": ""},
+            {"ID": "user_003", "UserName": "Workspace Admin", "DisplayName": ""},  # 空间管理员
+            {"ID": "user_004", "UserName": "Another Inactive", "DisplayName": ""},
+        ]
+        # 工作空间列表（1个团队工作空间）
+        workspaces = [
+            {"ID": "ws_001", "IsPersonal": False},
+        ]
+        # 工作空间成员（包含 WorkspaceAdmin）
+        members = [
+            {"Name": "Workspace Admin", "Role": "WorkspaceAdmin"},
+            {"Name": "Regular Member", "Role": "WorkspaceMember"},
+        ]
+
+        # paginated_request 调用顺序: ListApp -> ListUser -> ListAllWorkspace -> ListWorkspaceMember
+        mock_client.paginated_request = Mock(side_effect=[
+            (apps, 1),        # ListApp
+            (users, 4),       # ListUser
+            (workspaces, 1),  # ListAllWorkspace
+            (members, 2),     # ListWorkspaceMember
+        ])
+        result = analyzer.analyze(page_size=100)
+
+        assert result["total_users"] == 4
+        assert result["active_users"] == 1
+        assert result["inactive_count"] == 2  # user_002 和 user_004（排除 user_003 空间管理员）
+        assert len(result["inactive_users"]) == 2
+
+        inactive_ids = {u["ID"] for u in result["inactive_users"]}
+        assert "user_002" in inactive_ids
+        assert "user_004" in inactive_ids
+        assert "user_003" not in inactive_ids  # 空间管理员被排除

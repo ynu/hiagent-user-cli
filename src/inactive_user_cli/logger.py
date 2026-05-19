@@ -71,7 +71,7 @@ class LogManager:
         """打印标题"""
         console.print(f"\n[bold cyan]{message}[/bold cyan]\n")
 
-    def print_stats(self, total_users: int, regular_users: int = 0, regular_active: int = 0, regular_inactive: int = 0, visitor_count: int = 0):
+    def print_stats(self, total_users: int, regular_users: int = 0, regular_active: int = 0, regular_inactive: int = 0, visitor_count: int = 0, workspace_admin_count: int = 0):
         """打印统计信息（访客单独统计，非访客区分活跃/非活跃）"""
         inactive_rate = (regular_inactive / regular_users * 100) if regular_users > 0 else 0
         table = Table(title="用户分析报告", show_header=True, header_style="bold magenta")
@@ -84,6 +84,7 @@ class LogManager:
         table.add_row("  - 非活跃用户", f"[yellow]{regular_inactive:,}[/yellow]")
         table.add_row("  - 非活跃占比", f"[yellow]{inactive_rate:.1f}%[/yellow]")
         table.add_row("访客用户数", f"{visitor_count:,}")
+        table.add_row("团队空间管理员数", f"{workspace_admin_count:,}")
 
         console.print(table)
 
@@ -135,6 +136,58 @@ class LogManager:
 
         for uid, (count, name) in sorted(creator_stats.items()):
             table.add_row(uid, name or "-", str(count))
+
+        console.print(table)
+
+    def print_workspaces_table(self, workspaces: list[dict[str, Any]]):
+        """打印工作空间表格"""
+        if not workspaces:
+            console.print("[dim]无工作空间[/dim]")
+            return
+
+        table = Table(show_header=True, header_style="bold cyan", min_width=120)
+        table.add_column("工作空间ID", style="dim")
+        table.add_column("工作空间名称", style="green")
+        table.add_column("管理员", style="yellow")
+        table.add_column("其他成员", style="white")
+
+        for ws in workspaces:
+            # 格式化管理员名称（添加姓名）
+            admins = ws.get("admins", [])
+            if admins:
+                admin_strs = []
+                for admin in admins:
+                    name = admin.get("member_name", "")
+                    display = admin.get("member_display_name", "")
+                    if display and display != name:
+                        admin_strs.append(f"{name} ({display})")
+                    else:
+                        admin_strs.append(name)
+                admin_str = ", ".join(admin_strs)
+            else:
+                admin_str = "-"
+
+            # 格式化其他成员名称（添加姓名）
+            other_members = ws.get("other_members", [])
+            if other_members:
+                member_strs = []
+                for member in other_members:
+                    name = member.get("member_name", "")
+                    display = member.get("member_display_name", "")
+                    if display and display != name:
+                        member_strs.append(f"{name} ({display})")
+                    else:
+                        member_strs.append(name)
+                member_str = ", ".join(member_strs)
+            else:
+                member_str = "-"
+
+            table.add_row(
+                ws.get("workspace_id", ""),
+                ws.get("workspace_name", ""),
+                admin_str,
+                member_str,
+            )
 
         console.print(table)
 

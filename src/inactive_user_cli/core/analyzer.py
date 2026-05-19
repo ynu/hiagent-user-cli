@@ -5,6 +5,7 @@ from typing import Any
 from inactive_user_cli.api.client import APIClient
 from inactive_user_cli.api.app import ListAppAPI
 from inactive_user_cli.api.user import ListUserAPI
+from inactive_user_cli.api.workspace import ListWorkspaceAPI, WorkspaceInfo
 from inactive_user_cli.logger import LogManager
 
 
@@ -16,6 +17,7 @@ class InactiveUserAnalyzer:
         self.logger = logger
         self.list_app = ListAppAPI(client)
         self.list_user = ListUserAPI(client)
+        self.list_workspace = ListWorkspaceAPI(client)
 
     def analyze(self, page_size: int = 100, include_visitor: bool = True) -> dict[str, Any]:
         """
@@ -39,7 +41,13 @@ class InactiveUserAnalyzer:
             users, total_users = self.list_user.list_users(page_size=page_size, include_visitor=True)
             progress.update(task2, completed=True, description=f"[green]获取到 {total_users} 个用户")
 
-        # 步骤3: 计算非活跃用户，区分访客
+            # 步骤3: 获取工作空间信息
+            task3 = progress.add_task("[cyan]获取工作空间...", total=None)
+            admin_names, workspaces = self.list_workspace.get_workspace_admins(page_size=page_size)
+            admin_count = len(admin_names)
+            progress.update(task3, completed=True, description=f"[green]获取到 {admin_count} 个空间管理员")
+
+        # 步骤4: 计算非活跃用户，区分访客，同时排除空间管理员
         inactive_users = []
         inactive_visitors = []
         active_count = 0
@@ -47,12 +55,17 @@ class InactiveUserAnalyzer:
 
         for user in users:
             user_id = user.get("ID", "")
+            user_name = user.get("UserName", "") or user.get("DisplayName", "")
             is_visitor = user.get("RoleName") == "TenantVisitor"
+            is_admin = user_name in admin_names
+
             if user_id not in creators:
                 if is_visitor:
                     inactive_visitors.append(user)
                 else:
-                    inactive_users.append(user)
+                    # 非访客用户：排除空间管理员
+                    if not is_admin:
+                        inactive_users.append(user)
             else:
                 if is_visitor:
                     active_visitor_count += 1
@@ -67,6 +80,8 @@ class InactiveUserAnalyzer:
             "inactive_count": len(inactive_users) + len(inactive_visitors),
             "active_visitor_count": active_visitor_count,
             "creators": creators,
+            "workspace_admins": admin_names,
+            "workspaces": workspaces,
         }
 
     def get_creators(self, page_size: int = 100) -> list[dict[str, Any]]:
