@@ -76,6 +76,46 @@ class TestSyncGroupsCommand:
         assert mock_run.call_count == 2
         assert mock_run.call_args_list[-1].kwargs.get("dry_run") is False
 
+    def test_execute_displays_final_changes(self, runner, rules_file, tmp_path):
+        """执行后显示实际执行的变更（非 DRY RUN 预览）"""
+        dry = fake_engine_data()
+        final = dict(fake_engine_data(), dry_run=False, applied=True, success=1, failure=0, errors=[])
+        with patch("inactive_user_cli.core.group_sync.GroupSyncEngine.run",
+                   side_effect=[dry, final]), \
+             patch("inactive_user_cli.logger.LogManager.save_sync_log",
+                   return_value=tmp_path / "log.json"):
+            result = runner.invoke(
+                main, ["sync-groups", "--rules", rules_file, "--force"],
+            )
+        assert result.exit_code == 0
+        # 预览 + 执行各打印一次变更表；DRY RUN 标记只出现在预览
+        assert result.output.count("同步变更预览") == 2
+        assert result.output.count("DRY RUN") == 1
+        # 摘要按批次计数描述
+        assert "批操作" in result.output
+
+    def test_no_changes_skips_confirm(self, runner, rules_file):
+        """无变更时跳过确认，不执行"""
+        dry = dict(fake_engine_data(), changes={})
+        with patch("inactive_user_cli.core.group_sync.GroupSyncEngine.run",
+                   return_value=dry) as mock_run:
+            result = runner.invoke(
+                main, ["sync-groups", "--rules", rules_file],
+            )
+        assert result.exit_code == 0
+        assert mock_run.call_count == 1
+
+    def test_execute_api_error(self, runner, rules_file):
+        """执行阶段 API 错误 → 退出码 1"""
+        from inactive_user_cli.api.client import APIError
+        dry = fake_engine_data()
+        with patch("inactive_user_cli.core.group_sync.GroupSyncEngine.run",
+                   side_effect=[dry, APIError("boom")]):
+            result = runner.invoke(
+                main, ["sync-groups", "--rules", rules_file, "--force"],
+            )
+        assert result.exit_code == 1
+
     def test_missing_rules_file(self, runner, tmp_path):
         """规则文件不存在 → 报错退出"""
         result = runner.invoke(

@@ -259,11 +259,11 @@ class LogManager:
         if result.get("dry_run"):
             return
         if result.get("failure"):
-            console.print(f"\n[red]执行完成: 成功 {result['success']} 项，失败 {result['failure']} 项[/red]")
+            console.print(f"\n[red]执行完成: 成功 {result['success']} 批，失败 {result['failure']} 批[/red]")
             for err in result.get("errors", []):
                 console.print(f"  [red]✗[/red] {err}")
         else:
-            console.print(f"\n[green]✓ 同步完成: 共执行 {result['success']} 项操作[/green]")
+            console.print(f"\n[green]✓ 同步完成: 共执行 {result['success']} 批操作[/green]")
 
     def save_sync_log(self, result: dict[str, Any]) -> Path:
         """保存同步日志到 JSON 文件（命名/结构对齐 save_delete_log）"""

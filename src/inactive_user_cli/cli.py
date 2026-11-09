@@ -369,7 +369,9 @@ def sync_groups(rules_path: str, dry_run: bool, force: bool):
                 return
 
         # 真实执行时重新拉取计算，避免预览与执行之间数据变化
+        # 注意: 执行集可能与确认的预览不同（期间数据变化），实际执行集以 sync 日志为准
         final_result = engine.run(dry_run=False)
+        logger.print_sync_changes(final_result["changes"], dry_run=False)
         logger.print_sync_summary(final_result)
 
         log_file = logger.save_sync_log(final_result)
