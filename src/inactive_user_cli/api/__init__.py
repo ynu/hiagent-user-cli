@@ -5,5 +5,6 @@ from .app import ListAppAPI
 from .user import ListUserAPI
 from .delete import DeleteUserAPI
 from .workspace import ListWorkspaceAPI
+from .group import GroupAPI
 
-__all__ = ["APIClient", "APIError", "ListAppAPI", "ListUserAPI", "DeleteUserAPI", "ListWorkspaceAPI"]
+__all__ = ["APIClient", "APIError", "ListAppAPI", "ListUserAPI", "DeleteUserAPI", "ListWorkspaceAPI", "GroupAPI"]
