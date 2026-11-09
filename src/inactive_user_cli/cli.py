@@ -354,7 +354,7 @@ def sync_groups(rules_path: str, dry_run: bool, force: bool):
     try:
         # 预览（总是先 dry run 计算，展示变更）
         result = engine.run(dry_run=True)
-        logger.print_sync_changes(result["changes"], dry_run=True)
+        logger.print_sync_changes(result["changes"], dry_run=True, users=result.get("users"))
 
         if dry_run:
             return
@@ -375,7 +375,7 @@ def sync_groups(rules_path: str, dry_run: bool, force: bool):
         if final_result["changes"] != result["changes"]:
             logger.print_warning("注意: 执行时平台数据已变化，实际执行的变更与预览不同，以下为实际执行内容")
 
-        logger.print_sync_changes(final_result["changes"], dry_run=False)
+        logger.print_sync_changes(final_result["changes"], dry_run=False, users=final_result.get("users"))
         logger.print_sync_summary(final_result)
 
         log_file = logger.save_sync_log(final_result)

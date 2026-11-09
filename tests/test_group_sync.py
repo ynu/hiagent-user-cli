@@ -175,9 +175,12 @@ class TestGroupSyncEngine:
                 return ([{"IdentityID": "u1"}] if gid == "g_t" else ([{"IdentityID": "u2"}]), 1,)
 
         mock_client.paginated_request.side_effect = paginated_side_effect
-        changes = engine.fetch_changes()
+        changes, users_by_id = engine.fetch_changes()
         # u1 → 教师组（已在内，无操作）；u2 → 学生组（已在）；教师组现有 u1 匹配、学生组现有 u2 匹配
         assert changes == {}
+        # 返回用户索引，供输出用户名/姓名/邮箱
+        assert users_by_id["u1"]["UserName"] == "20220178"
+        assert users_by_id["u2"]["DisplayName"] == "王同学"
 
     def test_fetch_changes_unknown_group(self, mock_client, rules_file):
         """规则引用不存在的组 → RulesError"""
@@ -232,6 +235,8 @@ class TestGroupSyncEngine:
         assert result["dry_run"] is True
         assert result["applied"] is False
         assert result["changes"]["教师组"]["add"] == ["u2"]
+        # dry run 结果携带用户索引（供输出用户名/姓名/邮箱）
+        assert result["users"]["u2"]["UserName"] == "20220179"
 
     def test_execute_add_and_remove(self, mock_client, rules_file):
         """执行模式调用 add/remove 并返回结果"""
@@ -264,6 +269,8 @@ class TestGroupSyncEngine:
         assert result["changes"]["教师组"]["add"] == ["u2"]
         assert result["changes"]["教师组"]["remove"] == ["u1"]
         assert result["changes"]["学生组"]["add"] == ["u1"]
+        # 执行结果也携带用户索引
+        assert result["users"]["u2"]["UserName"] == "20220179"
 
     def test_execute_partial_failure(self, mock_client, rules_file):
         """单组 add 失败不中断其他组"""

@@ -232,8 +232,15 @@ class LogManager:
 
         console.print(table)
 
-    def print_sync_changes(self, changes: dict[str, dict[str, Any]], dry_run: bool):
-        """打印同步变更表"""
+    def print_sync_changes(self, changes: dict[str, dict[str, Any]], dry_run: bool,
+                           users: dict[str, dict[str, Any]] | None = None):
+        """打印同步变更表
+
+        Args:
+            changes: 变更表
+            dry_run: 是否为预览模式
+            users: {用户ID: 用户信息}，用于展示用户名/姓名/邮箱（可选）
+        """
         mode = "[yellow]DRY RUN[/yellow] - " if dry_run else ""
         if not changes:
             console.print(f"\n{mode}[green]所有组已同步，无需变更[/green]")
@@ -243,11 +250,20 @@ class LogManager:
         for group_name, change in changes.items():
             table = Table(title=f"组: {group_name}", show_header=True, header_style="bold magenta")
             table.add_column("操作", style="cyan")
-            table.add_column("用户 ID", style="white")
-            for uid in change["add"]:
-                table.add_row("[green]添加[/green]", uid)
-            for uid in change["remove"]:
-                table.add_row("[red]移除[/red]", uid)
+            table.add_column("用户名", style="green")
+            table.add_column("姓名", style="white")
+            table.add_column("邮箱", style="blue")
+            table.add_column("用户 ID", style="dim")
+            for uid in change["add"] + change["remove"]:
+                op = "[green]添加[/green]" if uid in change["add"] else "[red]移除[/red]"
+                u = (users or {}).get(uid, {})
+                table.add_row(
+                    op,
+                    u.get("UserName", "-"),
+                    u.get("DisplayName", "") or "-",
+                    u.get("Email", "") or "-",
+                    uid,
+                )
             console.print(table)
 
         add_total = sum(len(c["add"]) for c in changes.values())

@@ -34,6 +34,8 @@ def fake_engine_data():
         "changes": {"教师组": {"group_id": "g_t", "add": ["u1"], "remove": []}},
         "dry_run": True, "applied": False,
         "success": 0, "failure": 0, "errors": [],
+        "users": {"u1": {"ID": "u1", "UserName": "20220178",
+                          "DisplayName": "张三", "Email": "z@x.com"}},
     }
 
 
@@ -47,6 +49,18 @@ class TestSyncGroupsCommand:
             )
         assert result.exit_code == 0
         assert "教师组" in result.output
+
+    def test_dry_run_shows_user_info(self, runner, rules_file):
+        """预览表格展示用户名/姓名/邮箱"""
+        with patch("inactive_user_cli.core.group_sync.GroupSyncEngine.run",
+                   return_value=fake_engine_data()):
+            result = runner.invoke(
+                main, ["sync-groups", "--rules", rules_file, "--dry-run"],
+            )
+        assert result.exit_code == 0
+        assert "20220178" in result.output
+        assert "张三" in result.output
+        assert "z@x.com" in result.output
 
     def test_execute_requires_confirm(self, runner, rules_file):
         """执行模式需要确认，取消则不执行"""

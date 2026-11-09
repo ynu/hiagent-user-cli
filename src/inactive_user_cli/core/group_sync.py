@@ -148,10 +148,15 @@ class GroupSyncEngine:
         self.page_size = page_size
         self.rules = load_rules(self.rules_path)
 
-    def fetch_changes(self) -> dict[str, dict[str, Any]]:
+    def fetch_changes(self) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
         """拉取平台数据并计算变更
 
         注意：规则脚本 apply 必须是确定性纯函数（两次计算需一致）。
+
+        Returns:
+            (changes, users_by_id)：
+            changes 为 {组名: {"group_id": 组ID, "add": [...], "remove": [...]}}；
+            users_by_id 为 {用户ID: 用户信息}，供输出用户名/姓名/邮箱。
         """
         group_api = GroupAPI(self.client)
         user_api = ListUserAPI(self.client)
@@ -165,6 +170,8 @@ class GroupSyncEngine:
             raise RulesError(
                 "未获取到任何平台用户（可能是 API 异常），为防止误删全部组成员，已中止同步。"
             )
+
+        users_by_id = {str(u.get("ID", "")): u for u in users if u.get("ID")}
 
         name_to_id = {g.get("GroupName", ""): g.get("ID", "") for g in groups}
 
@@ -182,7 +189,7 @@ class GroupSyncEngine:
             group_members[gid] = members
 
         # 用真实成员重算（现有成员数据到位后增量才准确）
-        return compute_changes(users, groups, group_members, self.rules)
+        return compute_changes(users, groups, group_members, self.rules), users_by_id
 
     def run(self, dry_run: bool = False) -> dict[str, Any]:
         """执行同步；dry_run=True 时只返回变更不调用写接口
@@ -190,14 +197,14 @@ class GroupSyncEngine:
         注意：success/failure 按写操作批次计数（一次批量添加计 1）。
 
         Returns:
-            {"changes": 变更表, "dry_run": bool, "applied": bool,
-             "success": int, "failure": int, "errors": [str...]}
+            {"changes": 变更表, "users": {用户ID: 用户信息}, "dry_run": bool,
+             "applied": bool, "success": int, "failure": int, "errors": [str...]}
         """
-        changes = self.fetch_changes()
+        changes, users_by_id = self.fetch_changes()
 
         if dry_run:
-            return {"changes": changes, "dry_run": True, "applied": False,
-                    "success": 0, "failure": 0, "errors": []}
+            return {"changes": changes, "users": users_by_id, "dry_run": True,
+                    "applied": False, "success": 0, "failure": 0, "errors": []}
 
         group_api = GroupAPI(self.client)
 
@@ -222,5 +229,5 @@ class GroupSyncEngine:
                     failure += 1
                     errors.append(f"从 {group_name} 移除失败: {e}")
 
-        return {"changes": changes, "dry_run": False, "applied": True,
-                "success": success, "failure": failure, "errors": errors}
+        return {"changes": changes, "users": users_by_id, "dry_run": False,
+                "applied": True, "success": success, "failure": failure, "errors": errors}
