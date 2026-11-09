@@ -179,6 +179,39 @@ uv run inactive-user logs
 uv run inactive-user logs delete_2024-01-01.json
 ```
 
+### sync-groups - 用户组同步
+
+根据规则脚本增量同步用户组成员（添加缺失成员 + 移除不匹配成员）。
+
+```bash
+uv run inactive-user sync-groups --rules rules.py [--dry-run] [--force]
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `--rules` | path | 规则脚本路径（必填） |
+| `--dry-run` | flag | 仅预览变更，不执行 |
+| `--force` | flag | 跳过确认直接执行 |
+
+**示例:**
+
+```bash
+# 预览变更（不执行）
+uv run inactive-user sync-groups --rules rules.py --dry-run
+
+# 执行（需确认）
+uv run inactive-user sync-groups --rules rules.py
+
+# 跳过确认
+uv run inactive-user sync-groups --rules rules.py --force
+```
+
+**规则脚本:**
+
+脚本必须定义 `apply(user) -> 组名(str) / 组名列表(list[str]) / None`，可选定义 `MUTEX_GROUPS`（互斥组集合，同一集合内用户只能属于一个组，同时命中多个时按声明顺序保留第一个）。
+
+规则脚本示例见 `src/inactive_user_cli/core/rules_example.py.example`，复制为 `rules.py` 后修改使用。
+
 ## 配置说明
 
 ### 环境变量
