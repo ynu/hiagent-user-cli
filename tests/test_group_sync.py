@@ -4,7 +4,13 @@ import textwrap
 
 import pytest
 
-from inactive_user_cli.core.group_sync import load_rules, compute_changes
+from inactive_user_cli.api.client import APIError
+from inactive_user_cli.core.group_sync import (
+    GroupSyncEngine,
+    RulesError,
+    compute_changes,
+    load_rules,
+)
 
 
 RULES_OK = textwrap.dedent("""
@@ -150,34 +156,10 @@ class TestComputeChanges:
         assert changes["学生组"]["add"] == ["u9"]
 
 
-from unittest.mock import Mock
-
-from inactive_user_cli.core.group_sync import GroupSyncEngine
-
-
-@pytest.fixture
-def mock_client2():
-    from inactive_user_cli.api.client import APIClient
-    from inactive_user_cli.config import APIConfig
-    config = APIConfig(
-        host="10.10.160.222:30040/",
-        version="2023-08-01",
-        service="app",
-        region="cn-north-1",
-        account_id="1000000000",
-        ak="test_ak",
-        sk="test_sk",
-    )
-    client = APIClient(config)
-    client.request = Mock()
-    client.paginated_request = Mock()
-    return client
-
-
 class TestGroupSyncEngine:
-    def test_fetch_and_compute(self, mock_client2, rules_file):
+    def test_fetch_and_compute(self, mock_client, rules_file):
         """fetch_changes 拉取用户/组/成员并计算变更"""
-        engine = GroupSyncEngine(mock_client2, rules_file)
+        engine = GroupSyncEngine(mock_client, rules_file)
 
         def paginated_side_effect(action, data, **kwargs):
             if action == "ListUserForAdmin":
@@ -192,27 +174,44 @@ class TestGroupSyncEngine:
                 gid = data["GroupID"]
                 return ([{"IdentityID": "u1"}] if gid == "g_t" else ([{"IdentityID": "u2"}]), 1,)
 
-        mock_client2.paginated_request.side_effect = paginated_side_effect
+        mock_client.paginated_request.side_effect = paginated_side_effect
         changes = engine.fetch_changes()
         # u1 → 教师组（已在内，无操作）；u2 → 学生组（已在）；教师组现有 u1 匹配、学生组现有 u2 匹配
         assert changes == {}
 
-    def test_fetch_changes_unknown_group(self, mock_client2, rules_file):
+    def test_fetch_changes_unknown_group(self, mock_client, rules_file):
         """规则引用不存在的组 → RulesError"""
-        engine = GroupSyncEngine(mock_client2, rules_file)
+        engine = GroupSyncEngine(mock_client, rules_file)
+
+        def paginated_side_effect(action, data, **kwargs):
+            if action == "ListUserForAdmin":
+                # 有用户（避免触发空用户中止），其目标组"教师组"不在平台组列表
+                return ([{"ID": "u1", "UserName": "20220178"}], 1)
+            return ([{"ID": "g_s", "GroupName": "学生组"}], 1)
+
+        mock_client.paginated_request.side_effect = paginated_side_effect
+        with pytest.raises(RulesError, match="不存在"):
+            engine.fetch_changes()
+
+    def test_empty_users_aborts(self, mock_client, rules_file):
+        """拉取不到任何用户 → RulesError 中止，不发起成员/写调用"""
+        engine = GroupSyncEngine(mock_client, rules_file)
 
         def paginated_side_effect(action, data, **kwargs):
             if action == "ListUserForAdmin":
                 return ([], 0)
-            return ([{"ID": "g_s", "GroupName": "学生组"}], 1)
+            if action == "ListUserGroup":
+                return ([{"ID": "g_s", "GroupName": "学生组"}], 1)
+            raise AssertionError(f"不应拉取组成员: {action}")
 
-        mock_client2.paginated_request.side_effect = paginated_side_effect
-        with pytest.raises(Exception, match="不存在"):
+        mock_client.paginated_request.side_effect = paginated_side_effect
+        with pytest.raises(RulesError, match="未获取到任何平台用户"):
             engine.fetch_changes()
+        mock_client.request.assert_not_called()
 
-    def test_dry_run_no_write_calls(self, mock_client2, rules_file):
+    def test_dry_run_no_write_calls(self, mock_client, rules_file):
         """dry_run=True 不调用 CreateGroupMember/RemoveGroupMember"""
-        engine = GroupSyncEngine(mock_client2, rules_file)
+        engine = GroupSyncEngine(mock_client, rules_file)
 
         def paginated_side_effect(action, data, **kwargs):
             if action == "ListUserForAdmin":
@@ -225,19 +224,18 @@ class TestGroupSyncEngine:
             if action == "ListGroupMember":
                 return ([{"IdentityID": "u1"}] if data["GroupID"] == "g_t" else [], 1 if data["GroupID"] == "g_t" else 0,)
 
-        mock_client2.paginated_request.side_effect = paginated_side_effect
-        mock_client2.request = Mock()
+        mock_client.paginated_request.side_effect = paginated_side_effect
 
         result = engine.run(dry_run=True)
         # u2 应加入教师组 → 但 dry run 不应有任何写请求
-        mock_client2.request.assert_not_called()
+        mock_client.request.assert_not_called()
         assert result["dry_run"] is True
         assert result["applied"] is False
         assert result["changes"]["教师组"]["add"] == ["u2"]
 
-    def test_execute_add_and_remove(self, mock_client2, rules_file):
+    def test_execute_add_and_remove(self, mock_client, rules_file):
         """执行模式调用 add/remove 并返回结果"""
-        engine = GroupSyncEngine(mock_client2, rules_file)
+        engine = GroupSyncEngine(mock_client, rules_file)
 
         def paginated_side_effect(action, data, **kwargs):
             if action == "ListUserForAdmin":
@@ -253,15 +251,54 @@ class TestGroupSyncEngine:
                     return ([{"IdentityID": "u1"}], 1)  # u1 在教师组但规则判定为学生组
                 return ([], 0)
 
-        mock_client2.paginated_request.side_effect = paginated_side_effect
-        mock_client2.request = Mock()
+        mock_client.paginated_request.side_effect = paginated_side_effect
 
         result = engine.run(dry_run=False)
-        mock_client2.request.assert_called()
-        calls = {args[0] for args, _ in mock_client2.request.call_args_list}
+        mock_client.request.assert_called()
+        calls = {args[0] for args, _ in mock_client.request.call_args_list}
         assert calls == {"CreateGroupMember", "RemoveGroupMember"}
         assert result["applied"] is True
+        assert result["success"] == 3
+        assert result["failure"] == 0
         # 教师组: add u2, remove u1；学生组: add u1
         assert result["changes"]["教师组"]["add"] == ["u2"]
         assert result["changes"]["教师组"]["remove"] == ["u1"]
         assert result["changes"]["学生组"]["add"] == ["u1"]
+
+    def test_execute_partial_failure(self, mock_client, rules_file):
+        """单组 add 失败不中断其他组"""
+        engine = GroupSyncEngine(mock_client, rules_file)
+
+        def paginated_side_effect(action, data, **kwargs):
+            if action == "ListUserForAdmin":
+                return (
+                    [{"ID": "u2", "UserName": "20220179", "DisplayName": "李老师"},
+                     {"ID": "u1", "UserName": "s001", "DisplayName": "王同学"}], 2,
+                )
+            if action == "ListUserGroup":
+                return ([{"ID": "g_t", "GroupName": "教师组"},
+                         {"ID": "g_s", "GroupName": "学生组"}], 2,)
+            if action == "ListGroupMember":
+                if data["GroupID"] == "g_t":
+                    return ([{"IdentityID": "u1"}], 1)
+                return ([], 0)
+
+        mock_client.paginated_request.side_effect = paginated_side_effect
+        # 教师组 add u2；学生组 add u1。让教师组的写调用失败
+        call_count = {"n": 0}
+
+        def request_side_effect(action, data, **kwargs):
+            call_count["n"] += 1
+            if action == "CreateGroupMember" and data["GroupID"] == "g_t":
+                raise APIError("boom")
+            return {"Result": {}}
+
+        mock_client.request.side_effect = request_side_effect
+
+        result = engine.run(dry_run=False)
+        assert result["failure"] == 1
+        assert result["success"] >= 1
+        assert any("教师组" in e for e in result["errors"])
+        # 学生组的调用仍然发生
+        actions = {args[0] for args, _ in mock_client.request.call_args_list}
+        assert "RemoveGroupMember" in actions or call_count["n"] >= 2
