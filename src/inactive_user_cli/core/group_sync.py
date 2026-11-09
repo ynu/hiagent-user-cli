@@ -4,6 +4,10 @@ import importlib.util
 from pathlib import Path
 from typing import Any, Callable
 
+from ..api.client import APIClient, APIError
+from ..api.group import GroupAPI
+from ..api.user import ListUserAPI
+
 
 class RulesError(ValueError):
     """规则脚本错误"""
@@ -133,3 +137,78 @@ def compute_changes(
             changes[group_name] = {"group_id": gid, "add": add, "remove": remove}
 
     return changes
+
+
+class GroupSyncEngine:
+    """用户组同步引擎：拉取数据 → 计算变更 → 执行/预览"""
+
+    def __init__(self, client: APIClient, rules_path: str | Path, page_size: int = 10000):
+        self.client = client
+        self.rules_path = Path(rules_path)
+        self.page_size = page_size
+        self.rules = load_rules(self.rules_path)
+
+    def fetch_changes(self) -> dict[str, dict[str, Any]]:
+        """拉取平台数据并计算变更"""
+        group_api = GroupAPI(self.client)
+        user_api = ListUserAPI(self.client)
+
+        groups, _ = group_api.list_groups(page_size=self.page_size)
+        users, _ = user_api.list_users(include_visitor=True, page_size=self.page_size)
+
+        name_to_id = {g.get("GroupName", ""): g.get("ID", "") for g in groups}
+
+        # 先用空成员算一遍拿到 apply 实际返回的组集合（compute_changes 是纯函数，代价低），
+        # 据此决定要拉哪些组的成员
+        changes = compute_changes(users, groups, {}, self.rules)
+
+        referenced = set(changes.keys()) | {g for mset in self.rules["MUTEX_GROUPS"] for g in mset}
+        group_members: dict[str, list[dict[str, Any]]] = {}
+        for name in referenced:
+            gid = name_to_id.get(name)
+            if not gid:
+                continue
+            members, _ = group_api.list_group_members(gid, page_size=self.page_size)
+            group_members[gid] = members
+
+        # 用真实成员重算（现有成员数据到位后增量才准确）
+        return compute_changes(users, groups, group_members, self.rules)
+
+    def run(self, dry_run: bool = False) -> dict[str, Any]:
+        """执行同步；dry_run=True 时只返回变更不调用写接口
+
+        Returns:
+            {"changes": 变更表, "dry_run": bool, "applied": bool,
+             "success": int, "failure": int, "errors": [str...]}
+        """
+        changes = self.fetch_changes()
+
+        if dry_run:
+            return {"changes": changes, "dry_run": True, "applied": False,
+                    "success": 0, "failure": 0, "errors": []}
+
+        group_api = GroupAPI(self.client)
+
+        success = 0
+        failure = 0
+        errors: list[str] = []
+
+        for group_name, change in changes.items():
+            gid = change["group_id"]
+            if change["add"]:
+                try:
+                    group_api.add_members(gid, change["add"])
+                    success += 1
+                except APIError as e:
+                    failure += 1
+                    errors.append(f"添加到 {group_name} 失败: {e}")
+            if change["remove"]:
+                try:
+                    group_api.remove_members(gid, change["remove"])
+                    success += 1
+                except APIError as e:
+                    failure += 1
+                    errors.append(f"从 {group_name} 移除失败: {e}")
+
+        return {"changes": changes, "dry_run": False, "applied": True,
+                "success": success, "failure": failure, "errors": errors}
