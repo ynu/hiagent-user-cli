@@ -49,6 +49,12 @@ class TestLoadRules:
         with pytest.raises(ValueError, match="不存在"):
             load_rules(tmp_path / "nope.py")
 
+    def test_bad_mutex_shape(self, tmp_path):
+        path = tmp_path / "bad.py"
+        path.write_text('MUTEX_GROUPS = "学生组"\ndef apply(user):\n    return None\n', encoding="utf-8")
+        with pytest.raises(ValueError, match="MUTEX_GROUPS"):
+            load_rules(path)
+
 
 class TestComputeChanges:
     """compute_changes(users, groups, group_members, rules) -> changes"""
@@ -126,10 +132,19 @@ class TestComputeChanges:
         with pytest.raises(ValueError, match="教师组"):
             compute_changes([], [{"ID": "g_s", "GroupName": "学生组"}], {}, rules)
 
-    def test_returned_group_not_defined(self, groups, users, rules_file):
-        """apply 返回了规则文件未引用……不适用：返回组名必须在平台组列表中"""
+    def test_apply_raises(self, groups, rules_file):
+        """apply 抛异常 → 包装为 RulesError 并带用户信息"""
+        rules = load_rules(rules_file)
+        # 覆盖 rules["apply"] 为抛异常的函数
+        def bad_apply(user):
+            raise RuntimeError("boom")
+        rules["apply"] = bad_apply
+        with pytest.raises(ValueError, match="boom"):
+            compute_changes([{"ID": "u1", "UserName": "20220178"}], groups, {}, rules)
+
+    def test_fallback_group_exists(self, groups, users, rules_file):
+        """apply 返回的组名必须在平台组列表中；xyz 匹配 fallback "学生组"，存在 → 正常"""
         rules = load_rules(rules_file)
         users2 = [{"ID": "u9", "UserName": "xyz", "DisplayName": "???"}]
-        # xyz 匹配 fallback "学生组"，存在 → 正常
         changes = compute_changes(users2, groups, {}, rules)
         assert changes["学生组"]["add"] == ["u9"]

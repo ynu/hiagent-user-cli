@@ -33,9 +33,16 @@ def load_rules(path: str | Path) -> dict[str, Any]:
     if not callable(apply_fn):
         raise RulesError(f"规则脚本缺少 apply(user) 函数: {path}")
 
+    mutex_groups = getattr(module, "MUTEX_GROUPS", []) or []
+    if not isinstance(mutex_groups, list) or not all(
+        isinstance(mset, list) and all(isinstance(g, str) for g in mset)
+        for mset in mutex_groups
+    ):
+        raise RulesError("MUTEX_GROUPS 必须是 [[组名, ...], ...] 形式")
+
     return {
         "apply": apply_fn,
-        "MUTEX_GROUPS": list(getattr(module, "MUTEX_GROUPS", []) or []),
+        "MUTEX_GROUPS": list(mutex_groups),
     }
 
 
@@ -111,7 +118,7 @@ def compute_changes(
 
     # 现有成员: {组 ID: {用户 ID...}}
     current: dict[str, set[str]] = {
-        gid: {m.get("IdentityID", "") for m in group_members.get(gid, [])}
+        gid: {m.get("IdentityID", "") for m in group_members.get(gid, []) if m.get("IdentityID")}
         for gid in {name_to_id[g] for g in referenced}
     }
 
