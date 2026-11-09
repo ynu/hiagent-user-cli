@@ -360,7 +360,6 @@ def sync_groups(rules_path: str, dry_run: bool, force: bool):
             return
 
         if not result["changes"]:
-            logger.print_info("所有组已同步，无需变更")
             return
 
         if not force:
@@ -371,6 +370,11 @@ def sync_groups(rules_path: str, dry_run: bool, force: bool):
         # 真实执行时重新拉取计算，避免预览与执行之间数据变化
         # 注意: 执行集可能与确认的预览不同（期间数据变化），实际执行集以 sync 日志为准
         final_result = engine.run(dry_run=False)
+
+        # 检查执行集与预览是否一致（期间平台数据可能变化）
+        if final_result["changes"] != result["changes"]:
+            logger.print_warning("注意: 执行时平台数据已变化，实际执行的变更与预览不同，以下为实际执行内容")
+
         logger.print_sync_changes(final_result["changes"], dry_run=False)
         logger.print_sync_summary(final_result)
 
@@ -404,14 +408,21 @@ def logs(filename: Optional[str], log_dir: Optional[str]):
     else:
         # 列出所有日志文件
         log_files = sorted(log_path.glob("delete_*.json"), reverse=True)
-        if not log_files:
-            click.echo("[yellow]没有找到删除日志[/yellow]")
+        sync_files = sorted(log_path.glob("sync_*.json"), reverse=True)
+        if not log_files and not sync_files:
+            click.echo("[yellow]没有找到日志[/yellow]")
             return
 
-        click.echo("[cyan]删除日志列表:[/cyan]\n")
-        for f in log_files:
-            click.echo(f"  {f.name}")
-        click.echo(f"\n使用 'logs <filename.json>' 查看具体日志")
+        click.echo("[cyan]日志列表:[/cyan]\n")
+        if log_files:
+            click.echo("[cyan]删除日志:[/cyan]")
+            for f in log_files:
+                click.echo(f"  {f.name}")
+        if sync_files:
+            click.echo("\n[cyan]同步日志:[/cyan]")
+            for f in sync_files:
+                click.echo(f"  {f.name}")
+        click.echo("\n使用 'logs <filename.json>' 查看具体日志")
         return
 
     # 读取并显示日志
@@ -419,12 +430,24 @@ def logs(filename: Optional[str], log_dir: Optional[str]):
     with open(log_file, encoding="utf-8") as f:
         data = json.load(f)
 
-    click.echo(f"\n[bold]删除日志: {log_file.name}[/bold]\n")
+    is_sync = data.get("operation") == "sync_groups"
+    header = "同步日志" if is_sync else "删除日志"
+    click.echo(f"\n[bold]{header}: {log_file.name}[/bold]\n")
     click.echo(f"时间: {data.get('timestamp', 'N/A')}")
     click.echo(f"操作: {data.get('operation', 'N/A')}")
     click.echo(f"总数: {data.get('total_count', 0)}")
     click.echo(f"成功: [green]{data.get('success_count', 0)}[/green]")
     click.echo(f"失败: [red]{data.get('failure_count', 0)}[/red]\n")
+
+    if is_sync:
+        changes = data.get("changes")
+        if changes:
+            click.echo("[cyan]变更摘要:[/cyan]")
+            for group_name, change in changes.items():
+                add_count = len(change.get("add", []))
+                remove_count = len(change.get("remove", []))
+                click.echo(f"  {group_name}: 添加 {add_count}, 移除 {remove_count}")
+        return
 
     if data.get("records"):
         click.echo("[cyan]详细记录:[/cyan]")

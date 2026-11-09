@@ -92,7 +92,7 @@ def compute_changes(
     returned_groups: set[str] = set()
 
     for user in users:
-        user_id = user.get("ID", "")
+        user_id = str(user.get("ID", ""))
         if not user_id:
             continue
         try:
@@ -122,7 +122,7 @@ def compute_changes(
 
     # 现有成员: {组 ID: {用户 ID...}}
     current: dict[str, set[str]] = {
-        gid: {m.get("IdentityID", "") for m in group_members.get(gid, []) if m.get("IdentityID")}
+        gid: {str(m.get("IdentityID", "")) for m in group_members.get(gid, []) if m.get("IdentityID")}
         for gid in {name_to_id[g] for g in referenced}
     }
 
