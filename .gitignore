@@ -45,4 +45,4 @@ logs/*.log
 htmlcov/
 
 # uv
-.uv/
+.uv/rules.py
