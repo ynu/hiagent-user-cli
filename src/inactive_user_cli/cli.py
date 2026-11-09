@@ -25,6 +25,7 @@ from inactive_user_cli.api.app import ListAppAPI
 from inactive_user_cli.api.user import ListUserAPI
 from inactive_user_cli.api.delete import DeleteUserAPI
 from inactive_user_cli.core.analyzer import InactiveUserAnalyzer
+from inactive_user_cli.core.group_sync import GroupSyncEngine, RulesError
 from inactive_user_cli.email import send_delete_notification
 
 
@@ -330,6 +331,53 @@ def delete(page_size: int, only_visitor: bool, force: bool, output: Optional[str
             except Exception as e:
                 logger.print_warning(f"发送邮件通知失败: {e}")
 
+    except APIError as e:
+        logger.print_error(f"API 请求失败: {e}")
+        sys.exit(1)
+
+
+@main.command("sync-groups")
+@click.option("--rules", "rules_path", required=True, type=click.Path(exists=True), help="规则脚本路径")
+@click.option("--dry-run", is_flag=True, help="仅预览变更，不执行")
+@click.option("--force", is_flag=True, help="跳过确认直接执行")
+def sync_groups(rules_path: str, dry_run: bool, force: bool):
+    """根据规则脚本增量同步用户组成员（添加缺失 + 移除不匹配）"""
+    config, logger, client = get_config()
+    logger.print_header("用户组同步")
+
+    try:
+        engine = GroupSyncEngine(client, rules_path)
+    except RulesError as e:
+        logger.print_error(f"规则错误: {e}")
+        sys.exit(1)
+
+    try:
+        # 预览（总是先 dry run 计算，展示变更）
+        result = engine.run(dry_run=True)
+        logger.print_sync_changes(result["changes"], dry_run=True)
+
+        if dry_run:
+            return
+
+        if not result["changes"]:
+            logger.print_info("所有组已同步，无需变更")
+            return
+
+        if not force:
+            if not click.confirm("\n确认执行以上变更？"):
+                logger.print_info("已取消")
+                return
+
+        # 真实执行时重新拉取计算，避免预览与执行之间数据变化
+        final_result = engine.run(dry_run=False)
+        logger.print_sync_summary(final_result)
+
+        log_file = logger.save_sync_log(final_result)
+        logger.print_info(f"日志已保存: {log_file}")
+
+    except RulesError as e:
+        logger.print_error(f"规则错误: {e}")
+        sys.exit(1)
     except APIError as e:
         logger.print_error(f"API 请求失败: {e}")
         sys.exit(1)

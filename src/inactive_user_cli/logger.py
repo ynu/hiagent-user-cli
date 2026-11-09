@@ -231,3 +231,59 @@ class LogManager:
         table.add_row("日志文件", f"[dim]{log_file}[/dim]")
 
         console.print(table)
+
+    def print_sync_changes(self, changes: dict[str, dict[str, Any]], dry_run: bool):
+        """打印同步变更表"""
+        mode = "[yellow]DRY RUN[/yellow] - " if dry_run else ""
+        if not changes:
+            console.print(f"\n{mode}[green]所有组已同步，无需变更[/green]")
+            return
+
+        console.print(f"\n{mode}[bold]同步变更预览:[/bold]\n")
+        for group_name, change in changes.items():
+            table = Table(title=f"组: {group_name}", show_header=True, header_style="bold magenta")
+            table.add_column("操作", style="cyan")
+            table.add_column("用户 ID", style="white")
+            for uid in change["add"]:
+                table.add_row("[green]添加[/green]", uid)
+            for uid in change["remove"]:
+                table.add_row("[red]移除[/red]", uid)
+            console.print(table)
+
+        add_total = sum(len(c["add"]) for c in changes.values())
+        remove_total = sum(len(c["remove"]) for c in changes.values())
+        console.print(f"\n合计: [green]添加 {add_total}[/green] / [red]移除 {remove_total}[/red]")
+
+    def print_sync_summary(self, result: dict[str, Any]):
+        """打印执行结果摘要"""
+        if result.get("dry_run"):
+            return
+        if result.get("failure"):
+            console.print(f"\n[red]执行完成: 成功 {result['success']} 项，失败 {result['failure']} 项[/red]")
+            for err in result.get("errors", []):
+                console.print(f"  [red]✗[/red] {err}")
+        else:
+            console.print(f"\n[green]✓ 同步完成: 共执行 {result['success']} 项操作[/green]")
+
+    def save_sync_log(self, result: dict[str, Any]) -> Path:
+        """保存同步日志到 JSON 文件（命名/结构对齐 save_delete_log）"""
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        log_file = self.log_dir / f"sync_{timestamp}.json"
+
+        data = {
+            "version": "1.0.0",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "operation": "sync_groups",
+            "total_count": result["success"] + result["failure"],
+            "success_count": result["success"],
+            "failure_count": result["failure"],
+            "dry_run": result["dry_run"],
+            "applied": result["applied"],
+            "changes": result["changes"],
+            "errors": result["errors"],
+        }
+
+        with open(log_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        return log_file
